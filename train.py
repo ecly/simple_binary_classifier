@@ -1,77 +1,68 @@
-import dataset
-import tensorflow as tf
-import time
-from datetime import timedelta
-import math
-import random
-import numpy as np
+"""
+http://cv-tricks.com/tensorflow-tutorial/training-convolutional-neural-network-for-image-classification/
+"""
 import os
-
-# Adding Seed so that random initialization is consistent
+import tensorflow as tf
 from numpy.random import seed
+import dataset
 
+# Disable warning regarding AVX/FMA
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
+# Add Seed so that random initialization is consistent
 seed(1)
-from tensorflow import set_random_seed
+tf.set_random_seed(2)
 
-set_random_seed(2)
+TRAIN_PATH = os.path.join(os.getcwd(), "training_data")
+MODEL_NAME = "cheat_not_cheat_model"
 
+# The classes we'll be using, in the form of the folders contained in TRAIN_PATH
+CLASSES = os.listdir(TRAIN_PATH)
+NUM_CLASSES = len(CLASSES)
 
-batch_size = 32
+BATCH_SIZE = 32
 
-train_path = os.path.join(os.getcwd(), "training_data")
-model_name = "cheat_not_cheat_model"
-
-# Prepare input data
-classes = os.listdir(train_path)
-num_classes = len(classes)
 
 # 20% of the data will automatically be used for validation
-validation_size = 0.2
-img_size = 128
-num_channels = 3
-# We shall load all the training and validation images and labels into memory using openCV and use that during training
-data = dataset.read_train_sets(
-    train_path, img_size, classes, validation_size=validation_size
-)
+VALIDATION_SIZE = 0.2
+IMG_SIZE = 128
+NUM_CHANNELS = 3
 
 
-print("Complete reading input data. Will Now print a snippet of it")
-print("Number of files in Training-set:\t\t{}".format(len(data.train.labels)))
-print("Number of files in Validation-set:\t{}".format(len(data.valid.labels)))
+# Network graph params
+FILTER_SIZE_CONV1 = 3
+NUM_FILTERS_CONV1 = 32
 
+FILTER_SIZE_CONV2 = 3
+NUM_FILTERS_CONV2 = 32
 
-session = tf.Session()
-x = tf.placeholder(tf.float32, shape=[None, img_size, img_size, num_channels], name="x")
+FILTER_SIZE_CONV3 = 3
+NUM_FILTERS_CONV3 = 64
 
-## labels
-y_true = tf.placeholder(tf.float32, shape=[None, num_classes], name="y_true")
-y_true_cls = tf.argmax(y_true, dimension=1)
-
-
-##Network graph params
-filter_size_conv1 = 3
-num_filters_conv1 = 32
-
-filter_size_conv2 = 3
-num_filters_conv2 = 32
-
-filter_size_conv3 = 3
-num_filters_conv3 = 64
-
-fc_layer_size = 128
+FC_LAYER_SIZE = 128
 
 
 def create_weights(shape):
+    """ Creates the initial weights of the network """
     return tf.Variable(tf.truncated_normal(shape, stddev=0.05))
 
 
 def create_biases(size):
+    """ Creates the initial biases of the network """
     return tf.Variable(tf.constant(0.05, shape=[size]))
 
 
 def create_convolutional_layer(
-    input, num_input_channels, conv_filter_size, num_filters
+    input_, num_input_channels, conv_filter_size, num_filters
 ):
+    """
+    Helper function for creating a convolutional layer for the network.
+    Args:
+    input_: the output(activation) from the previous layer. A 4D tensor.
+    num_input_channels: number of channels, eg. RGB images 3
+    conv_filter_size: the size of the convolutional filter
+    num_filters: the amount of filters
+    """
 
     ## We shall define the weights that will be trained using create_weights function.
     weights = create_weights(
@@ -82,7 +73,7 @@ def create_convolutional_layer(
 
     ## Creating the convolutional layer
     layer = tf.nn.conv2d(
-        input=input, filter=weights, strides=[1, 1, 1, 1], padding="SAME"
+        input=input_, filter=weights, strides=[1, 1, 1, 1], padding="SAME"
     )
 
     layer += biases
@@ -98,11 +89,11 @@ def create_convolutional_layer(
 
 
 def create_flatten_layer(layer):
-    # We know that the shape of the layer will be [batch_size img_size img_size num_channels]
-    # But let's get it from the previous layer.
+    """
+    Helper function for creating a flattening layer
+    based on the previous layer in the network.
+    """
     layer_shape = layer.get_shape()
-
-    ## Number of features will be img_height * img_width* num_channels. But we shall calculate it in place of hard-coding it.
     num_features = layer_shape[1:4].num_elements()
 
     ## Now, we Flatten the layer so we shall have to reshape to num_features
@@ -111,102 +102,156 @@ def create_flatten_layer(layer):
     return layer
 
 
-def create_fc_layer(input, num_inputs, num_outputs, use_relu=True):
+def create_fc_layer(input_, num_inputs, num_outputs, use_relu=True):
+    """
+    Helper function for creating a fully connected layer.
+    Args:
+    input: the output(activation) from the previous layer. A 4D tensor.
+    num_input: the size of the input layer's output
+    num_outputs: the size of the output of the fc layer
+    use_relu:
+    https://stackoverflow.com/questions/43504248/what-does-relu-stand-for-in-tf-nn-relu
+    """
 
-    # Let's define trainable weights and biases.
+    # Define trainable weights and biases.
     weights = create_weights(shape=[num_inputs, num_outputs])
     biases = create_biases(num_outputs)
 
-    # Fully connected layer takes input x and produces wx+b.Since, these are matrices, we use matmul function in Tensorflow
-    layer = tf.matmul(input, weights) + biases
+    # Fully connected layer takes input x and produces wx+b.
+    # Since, these are matrices, we use matmul function in Tensorflow
+    layer = tf.matmul(input_, weights) + biases
     if use_relu:
         layer = tf.nn.relu(layer)
 
     return layer
 
 
-layer_conv1 = create_convolutional_layer(
-    input=x,
-    num_input_channels=num_channels,
-    conv_filter_size=filter_size_conv1,
-    num_filters=num_filters_conv1,
-)
-layer_conv2 = create_convolutional_layer(
-    input=layer_conv1,
-    num_input_channels=num_filters_conv1,
-    conv_filter_size=filter_size_conv2,
-    num_filters=num_filters_conv2,
-)
+def prepare_data():
+    """
+    Prepares the data in the training path.
+    Here we expect an amount of folders equal to the amount of classes,
+    where each folder will contain only images of that class.
+    """
+    data = dataset.read_train_sets(
+        TRAIN_PATH, IMG_SIZE, CLASSES, validation_size=VALIDATION_SIZE
+    )
 
-layer_conv3 = create_convolutional_layer(
-    input=layer_conv2,
-    num_input_channels=num_filters_conv2,
-    conv_filter_size=filter_size_conv3,
-    num_filters=num_filters_conv3,
-)
+    print("Complete reading input data. Will Now print a snippet of it")
+    print("Number of files in Training-set:\t\t{}".format(len(data.train.labels)))
+    print("Number of files in Validation-set:\t{}".format(len(data.valid.labels)))
 
-layer_flat = create_flatten_layer(layer_conv3)
-
-layer_fc1 = create_fc_layer(
-    input=layer_flat,
-    num_inputs=layer_flat.get_shape()[1:4].num_elements(),
-    num_outputs=fc_layer_size,
-    use_relu=True,
-)
-
-layer_fc2 = create_fc_layer(
-    input=layer_fc1, num_inputs=fc_layer_size, num_outputs=num_classes, use_relu=False
-)
-
-y_pred = tf.nn.softmax(layer_fc2, name="y_pred")
-
-y_pred_cls = tf.argmax(y_pred, dimension=1)
-session.run(tf.global_variables_initializer())
-cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=layer_fc2, labels=y_true)
-cost = tf.reduce_mean(cross_entropy)
-optimizer = tf.train.AdamOptimizer(learning_rate=1e-4).minimize(cost)
-correct_prediction = tf.equal(y_pred_cls, y_true_cls)
-accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+    return data
 
 
-session.run(tf.global_variables_initializer())
+def prepare_graph():
+    """
+    Prepares the grpah that we'll use for training
+    This consists of 3 convolutional layers, a flattening layer,
+    a fully connected layer, and a fully connected output.
+    """
+    x = tf.placeholder(
+        tf.float32, shape=[None, IMG_SIZE, IMG_SIZE, NUM_CHANNELS], name="x"
+    )
+
+    # Labels
+    y_true = tf.placeholder(tf.float32, shape=[None, NUM_CLASSES], name="y_true")
+    y_true_cls = tf.argmax(y_true, axis=1)
+
+    layer_conv1 = create_convolutional_layer(
+        input_=x,
+        num_input_channels=NUM_CHANNELS,
+        conv_filter_size=FILTER_SIZE_CONV1,
+        num_filters=NUM_FILTERS_CONV1,
+    )
+
+    layer_conv2 = create_convolutional_layer(
+        input_=layer_conv1,
+        num_input_channels=NUM_FILTERS_CONV1,
+        conv_filter_size=FILTER_SIZE_CONV2,
+        num_filters=NUM_FILTERS_CONV2,
+    )
+
+    layer_conv3 = create_convolutional_layer(
+        input_=layer_conv2,
+        num_input_channels=NUM_FILTERS_CONV2,
+        conv_filter_size=FILTER_SIZE_CONV3,
+        num_filters=NUM_FILTERS_CONV3,
+    )
+
+    layer_flat = create_flatten_layer(layer_conv3)
+
+    layer_fc1 = create_fc_layer(
+        input_=layer_flat,
+        num_inputs=layer_flat.get_shape()[1:4].num_elements(),
+        num_outputs=FC_LAYER_SIZE,
+        use_relu=True,
+    )
+
+    layer_fc2 = create_fc_layer(
+        input_=layer_fc1,
+        num_inputs=FC_LAYER_SIZE,
+        num_outputs=NUM_CLASSES,
+        use_relu=False,
+    )
+
+    y_pred = tf.nn.softmax(layer_fc2, name="y_pred")
+
+    y_pred_cls = tf.argmax(y_pred, axis=1)
+    cross_entropy = tf.nn.softmax_cross_entropy_with_logits(
+        logits=layer_fc2, labels=y_true
+    )
+    cost = tf.reduce_mean(cross_entropy)
+    optimizer = tf.train.AdamOptimizer(learning_rate=1e-4).minimize(cost)
+    correct_prediction = tf.equal(y_pred_cls, y_true_cls)
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+    return optimizer, accuracy, cost, x, y_true
 
 
-def show_progress(epoch, feed_dict_train, feed_dict_validate, val_loss):
+def show_progress(
+    session, accuracy, epoch, feed_dict_train, feed_dict_validate, val_loss
+):
+    """ Prints the progress of the training """
     acc = session.run(accuracy, feed_dict=feed_dict_train)
     val_acc = session.run(accuracy, feed_dict=feed_dict_validate)
-    msg = "Training Epoch {0} --- Training Accuracy: {1:>6.1%}, Validation Accuracy: {2:>6.1%},  Validation Loss: {3:.3f}"
+    msg = (
+        "Training Epoch {0} - Training Acc.: {1:>6.1%}, "
+        + "Validation Acc.: {2:>6.1%},  Validation Loss: {3:.3f}"
+    )
     print(msg.format(epoch + 1, acc, val_acc, val_loss))
 
 
-total_iterations = 0
-
-saver = tf.train.Saver()
-
-
 def train(num_iteration):
-    global total_iterations
+    """ Trains the network using the given amount of the iterations """
+    data = prepare_data()
+    optimizer, accuracy, cost, x, y_true = prepare_graph()
+    total_iterations = 0
+    saver = tf.train.Saver()
 
-    for i in range(total_iterations, total_iterations + num_iteration):
+    with tf.Session() as session:
+        session.run(tf.global_variables_initializer())
 
-        x_batch, y_true_batch, _, cls_batch = data.train.next_batch(batch_size)
-        x_valid_batch, y_valid_batch, _, valid_cls_batch = data.valid.next_batch(
-            batch_size
-        )
+        for i in range(total_iterations, total_iterations + num_iteration):
 
-        feed_dict_tr = {x: x_batch, y_true: y_true_batch}
-        feed_dict_val = {x: x_valid_batch, y_true: y_valid_batch}
+            x_batch, y_true_batch, _, _ = data.train.next_batch(BATCH_SIZE)
+            x_valid_batch, y_valid_batch, _, _ = data.valid.next_batch(BATCH_SIZE)
 
-        session.run(optimizer, feed_dict=feed_dict_tr)
+            feed_dict_tr = {x: x_batch, y_true: y_true_batch}
+            feed_dict_val = {x: x_valid_batch, y_true: y_valid_batch}
 
-        if i % int(data.train.num_examples / batch_size) == 0:
-            val_loss = session.run(cost, feed_dict=feed_dict_val)
-            epoch = int(i / int(data.train.num_examples / batch_size))
+            session.run(optimizer, feed_dict=feed_dict_tr)
 
-            show_progress(epoch, feed_dict_tr, feed_dict_val, val_loss)
-            saver.save(session, os.path.join(os.getcwd(), model_name))
+            if i % int(data.train.num_examples / BATCH_SIZE) == 0:
+                val_loss = session.run(cost, feed_dict=feed_dict_val)
+                epoch = int(i / int(data.train.num_examples / BATCH_SIZE))
 
-    total_iterations += num_iteration
+                show_progress(
+                    session, accuracy, epoch, feed_dict_tr, feed_dict_val, val_loss
+                )
+                saver.save(session, os.path.join(os.getcwd(), MODEL_NAME))
+
+        total_iterations += num_iteration
 
 
-train(num_iteration=3000)
+if __name__ == "__main__":
+    train(num_iteration=3000)
