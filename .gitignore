@@ -102,3 +102,14 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+
+# Data folders
+training_data/
+testing_data/
+cheat/
+not_cheat/
+*.index
+*.meta
+*.data-00000-of-00001
+checkpoint
