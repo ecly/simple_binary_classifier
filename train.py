@@ -1,4 +1,7 @@
 """
+Trains a model with Tensorflow using a CNN.
+Parameters are found at the top of the file as well as in the
+prepare_graph function.
 http://cv-tricks.com/tensorflow-tutorial/training-convolutional-neural-network-for-image-classification/
 """
 import os
@@ -132,15 +135,15 @@ def prepare_data():
     Here we expect an amount of folders equal to the amount of classes,
     where each folder will contain only images of that class.
     """
-    data = dataset.read_train_sets(
+    data_training, data_validation = dataset.read_train_sets(
         TRAIN_PATH, IMG_SIZE, CLASSES, validation_size=VALIDATION_SIZE
     )
 
     print("Complete reading input data. Will Now print a snippet of it")
-    print("Number of files in Training-set:\t\t{}".format(len(data.train.labels)))
-    print("Number of files in Validation-set:\t{}".format(len(data.valid.labels)))
+    print("Number of files in Training-set:\t{}".format(len(data_training.labels)))
+    print("Number of files in Validation-set:\t{}".format(len(data_validation.labels)))
 
-    return data
+    return data_training, data_validation
 
 
 def prepare_graph():
@@ -197,7 +200,7 @@ def prepare_graph():
     y_pred = tf.nn.softmax(layer_fc2, name="y_pred")
 
     y_pred_cls = tf.argmax(y_pred, axis=1)
-    cross_entropy = tf.nn.softmax_cross_entropy_with_logits(
+    cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(
         logits=layer_fc2, labels=y_true
     )
     cost = tf.reduce_mean(cross_entropy)
@@ -223,7 +226,7 @@ def show_progress(
 
 def train(num_iteration):
     """ Trains the network using the given amount of the iterations """
-    data = prepare_data()
+    data_training, data_validation = prepare_data()
     optimizer, accuracy, cost, x, y_true = prepare_graph()
     total_iterations = 0
     saver = tf.train.Saver()
@@ -233,17 +236,17 @@ def train(num_iteration):
 
         for i in range(total_iterations, total_iterations + num_iteration):
 
-            x_batch, y_true_batch, _, _ = data.train.next_batch(BATCH_SIZE)
-            x_valid_batch, y_valid_batch, _, _ = data.valid.next_batch(BATCH_SIZE)
+            x_batch, y_true_batch = data_training.next_batch(BATCH_SIZE)
+            x_valid_batch, y_valid_batch = data_validation.next_batch(BATCH_SIZE)
 
             feed_dict_tr = {x: x_batch, y_true: y_true_batch}
             feed_dict_val = {x: x_valid_batch, y_true: y_valid_batch}
 
             session.run(optimizer, feed_dict=feed_dict_tr)
 
-            if i % int(data.train.num_examples / BATCH_SIZE) == 0:
+            if i % int(data_training.num_examples / BATCH_SIZE) == 0:
                 val_loss = session.run(cost, feed_dict=feed_dict_val)
-                epoch = int(i / int(data.train.num_examples / BATCH_SIZE))
+                epoch = int(i / int(data_training.num_examples / BATCH_SIZE))
 
                 show_progress(
                     session, accuracy, epoch, feed_dict_tr, feed_dict_val, val_loss
@@ -254,4 +257,4 @@ def train(num_iteration):
 
 
 if __name__ == "__main__":
-    train(num_iteration=3000)
+    train(num_iteration=10000)

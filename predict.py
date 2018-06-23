@@ -1,3 +1,7 @@
+"""
+Used for predicting whether an image is of a given class.
+Takes the path of the input to classify as argument on the command line.
+"""
 import os
 import sys
 import cv2
@@ -15,6 +19,11 @@ CLASSES = os.listdir(TRAIN_PATH)
 NUM_CLASSES = len(CLASSES)
 
 def predict(image_path):
+    """
+    Predicts whether an image at image_path is cheat or not cheat,
+    using a pretrained model.
+    Returns [[probability of cheat, probability of not cheat]]
+    """
     images = []
     # Reading the image using OpenCV
     image = cv2.imread(image_path)
