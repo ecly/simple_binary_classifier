@@ -17,20 +17,18 @@ seed(1)
 tf.set_random_seed(2)
 
 TRAIN_PATH = os.path.join(os.getcwd(), "training_data")
-MODEL_NAME = "cheat_not_cheat_model"
+MODEL_NAME = "anticheat_model"
 
 # The classes we'll be using, in the form of the folders contained in TRAIN_PATH
 CLASSES = os.listdir(TRAIN_PATH)
 NUM_CLASSES = len(CLASSES)
 
+LEARNING_RATE = 1e-4
 BATCH_SIZE = 32
+VALIDATION_SIZE = 0.1
 
-
-# 20% of the data will automatically be used for validation
-VALIDATION_SIZE = 0.2
-IMG_SIZE = 128
+IMG_SIZE = 256
 NUM_CHANNELS = 3
-
 
 # Network graph params
 FILTER_SIZE_CONV1 = 3
@@ -42,7 +40,7 @@ NUM_FILTERS_CONV2 = 32
 FILTER_SIZE_CONV3 = 3
 NUM_FILTERS_CONV3 = 64
 
-FC_LAYER_SIZE = 128
+FC_LAYER_SIZE = 256
 
 
 def create_weights(shape):
@@ -136,7 +134,7 @@ def prepare_data():
     where each folder will contain only images of that class.
     """
     data_training, data_validation = dataset.read_train_sets(
-        TRAIN_PATH, IMG_SIZE, CLASSES, validation_size=VALIDATION_SIZE
+        TRAIN_PATH, IMG_SIZE, CLASSES, VALIDATION_SIZE
     )
 
     print("Complete reading input data. Will Now print a snippet of it")
@@ -192,7 +190,7 @@ def prepare_graph():
 
     layer_fc2 = create_fc_layer(
         input_=layer_fc1,
-        num_inputs=FC_LAYER_SIZE,
+        num_inputs=layer_fc1.get_shape()[1:4].num_elements(),
         num_outputs=NUM_CLASSES,
         use_relu=False,
     )
@@ -204,57 +202,43 @@ def prepare_graph():
         logits=layer_fc2, labels=y_true
     )
     cost = tf.reduce_mean(cross_entropy)
-    optimizer = tf.train.AdamOptimizer(learning_rate=1e-4).minimize(cost)
+    optimizer = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE).minimize(cost)
     correct_prediction = tf.equal(y_pred_cls, y_true_cls)
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
-    return optimizer, accuracy, cost, x, y_true
+    return optimizer, accuracy, x, y_true
 
 
-def show_progress(
-    session, accuracy, epoch, feed_dict_train, feed_dict_validate, val_loss
-):
-    """ Prints the progress of the training """
-    acc = session.run(accuracy, feed_dict=feed_dict_train)
-    val_acc = session.run(accuracy, feed_dict=feed_dict_validate)
-    msg = (
-        "Training Epoch {0} - Training Acc.: {1:>6.1%}, "
-        + "Validation Acc.: {2:>6.1%},  Validation Loss: {3:.3f}"
-    )
-    print(msg.format(epoch + 1, acc, val_acc, val_loss))
-
-
-def train(num_iteration):
-    """ Trains the network using the given amount of the iterations """
+def train(iterations):
+    """ Trains the network using the given amount of iterations """
     data_training, data_validation = prepare_data()
-    optimizer, accuracy, cost, x, y_true = prepare_graph()
-    total_iterations = 0
+    optimizer, accuracy, x, y_true = prepare_graph()
     saver = tf.train.Saver()
 
     with tf.Session() as session:
         session.run(tf.global_variables_initializer())
 
-        for i in range(total_iterations, total_iterations + num_iteration):
-
+        for i in range(iterations):
             x_batch, y_true_batch = data_training.next_batch(BATCH_SIZE)
             x_valid_batch, y_valid_batch = data_validation.next_batch(BATCH_SIZE)
 
-            feed_dict_tr = {x: x_batch, y_true: y_true_batch}
-            feed_dict_val = {x: x_valid_batch, y_true: y_valid_batch}
+            feed_dict_train = {x: x_batch, y_true: y_true_batch}
+            feed_dict_valid = {x: x_valid_batch, y_true: y_valid_batch}
 
-            session.run(optimizer, feed_dict=feed_dict_tr)
+            session.run(optimizer, feed_dict=feed_dict_train)
 
+            # At each epoch, calculate accuracy and print
             if i % int(data_training.num_examples / BATCH_SIZE) == 0:
-                val_loss = session.run(cost, feed_dict=feed_dict_val)
                 epoch = int(i / int(data_training.num_examples / BATCH_SIZE))
-
-                show_progress(
-                    session, accuracy, epoch, feed_dict_tr, feed_dict_val, val_loss
+                train_acc = session.run(accuracy, feed_dict=feed_dict_train)
+                valid_acc = session.run(accuracy, feed_dict=feed_dict_valid)
+                print(
+                    "Epoch %d - Training Acc.: %.2f, Validation Acc.: %.2f"
+                    % (epoch, train_acc, valid_acc)
                 )
+                # If we're doing perfect on both training and validation data, stop.
                 saver.save(session, os.path.join(os.getcwd(), MODEL_NAME))
-
-        total_iterations += num_iteration
 
 
 if __name__ == "__main__":
-    train(num_iteration=10000)
+    train(3000)

@@ -9,13 +9,19 @@ import cv2
 from sklearn.utils import shuffle
 import numpy as np
 
+
 def load_train(train_path, image_size, classes):
+    """
+    Expects a set of folders at train_path, each symbolizing a class.
+    The files within the folders will be labeled according to their folder,
+    and a numpy array with all the images, and one with their labels will
+    be returned as a tuple.
+    """
     images = []
     labels = []
 
     print("Reading training images")
-    for class_ in classes:
-        index = classes.index(class_)
+    for index, class_ in enumerate(classes):
         print("Reading for class {} (index: {})".format(class_, index))
         class_dir = os.path.join(train_path, class_, "*g")
         class_files = glob.glob(class_dir)
@@ -29,16 +35,16 @@ def load_train(train_path, image_size, classes):
             label[index] = 1.0
             labels.append(label)
 
-    images = np.array(images)
-    labels = np.array(labels)
-
-    return images, labels
+    return np.array(images), np.array(labels)
 
 
 class DataSet(object):
+    """
+    doc TODO
+    """
+
     def __init__(self, images, labels):
         self._num_examples = images.shape[0]
-
         self._images = images
         self._labels = labels
         self._epochs_done = 0
@@ -73,13 +79,11 @@ class DataSet(object):
             assert batch_size <= self._num_examples
         end = self._index_in_epoch
 
-        return (
-            self._images[start:end],
-            self._labels[start:end],
-        )
+        return self._images[start:end], self._labels[start:end]
 
 
 def read_train_sets(train_path, image_size, classes, validation_size):
+    """ doc TODO """
     images, labels = load_train(train_path, image_size, classes)
     images, labels = shuffle(images, labels)
 

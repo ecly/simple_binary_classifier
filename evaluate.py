@@ -42,7 +42,7 @@ def prepare_graph(session):
         TODO
     """
     # Recreate the network graph. At this step only graph is created.
-    saver = tf.train.import_meta_graph("cheat_not_cheat_model.meta")
+    saver = tf.train.import_meta_graph("anticheat_model.meta")
     # Load the weights saved using the restore method.
     saver.restore(session, tf.train.latest_checkpoint("./"))
     # Accessing the default graph which we have restored
